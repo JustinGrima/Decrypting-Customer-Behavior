@@ -1,0 +1,296 @@
+---
+title: "Capstone"
+output: html_document
+date: "2023-02-09"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries used
+```{r}
+library(car)
+library(ggplot2)
+library(psych)
+library(corrplot)
+library(dplyr)
+library(tidyr)
+library(caTools)
+library(caret)
+library(ROCR)
+library(broom)
+```
+
+
+Step 1: EDA
+```{r}
+#View the data characteristics
+bank = read.csv("bank-full.csv")
+View(bank)
+str(bank) #10-character type; 6 categorical, 4 binary variables and 7 integers. Response variable 'y' is binary. Ungrouped data where response is 1 or 0 for each observation.
+summary(bank)
+dim(bank) # 45211 observations and 17 attributes (including response variable).
+
+
+#Missing values
+count_miss_values = function(x) sum(is.na(x))
+apply(bank, MARGIN = 2, FUN = count_miss_values) #0 missing values.
+sum(is.na(bank)) #Double check, 0 missing values.
+
+#Duplicate values
+sum(duplicated(bank)) #0 duplicate values.
+
+#Change response variable name for clarification
+names(bank)[names(bank) == 'y'] <- 'sub_term_dep'
+
+#Check response variables 'subscription term deposit = Yes (1)' outcomes percentage.
+sub_yes = bank[bank$sub_term_dep == "yes",]
+sub_yes_obs = dim(sub_yes)[1]
+sub_yes_obs #5289
+(yes_percent = (sub_yes_obs/no_obs)*100) #11.70 % of response variable is 'yes'
+
+#Check response variables 'subscription term deposit = No (0)' outcomes percentage.
+sub_no = bank[bank$sub_term_dep == "no",]
+sub_no_obs = dim(sub_no)[1]
+sub_no_obs #39922
+(no_percent = (sub_no_obs/no_obs)*100) #88.30% of response variable is 'no'.
+
+#As we can see the datasets response variable is not balanced; 11.70% of the outcomes are 'yes' and 88.30% are 'no' for the response variable 'sub_term_dep' (subscription term deposit).
+
+#Convert categorical and binary variables to factors.
+bank$job = as.factor(bank$job)
+bank$marital = as.factor(bank$marital)
+bank$education = as.factor(bank$education)
+bank$default = as.factor(bank$default)
+bank$housing = as.factor(bank$housing)
+bank$loan = as.factor(bank$loan)
+bank$contact = as.factor(bank$contact)
+bank$month = as.factor(bank$month)
+bank$poutcome = as.factor(bank$poutcome)
+bank$sub_term_dep = as.factor(bank$sub_term_dep)
+
+#VISULISATION
+#Subset dataset with only numerical variables.
+bank_sub = as.data.frame(bank[,c(1,6,10,12:15)])
+
+dev.new()
+
+#pairs.panels with numerical variables.
+pairs.panels(bank_sub) #For the continuous variables, for the majority of them, there is no correlation. The only two variables with a 'medium' correlation (0.45) which is 'pdays' and 'previous'.
+
+#Correlation matrix.
+c = cor(bank_sub)
+corrplot(c, method = 'square')
+
+dev.new()
+ 
+#Categorical variable plots.
+par(mfrow = c(2,2))
+plot(bank$marital, col = 'blue', main = 'Martial Status')
+plot(bank$education, col =  'green',main = 'Education Level' )
+plot(bank$default, col = 'orange', main = 'Credit Default')
+plot(bank$housing, col = 'purple', main = 'Housing Loan')
+plot(bank$loan, col = 'yellow', main = 'Personal Loan')
+plot(bank$contact, col = 'turquoise', main = 'Contact Type')
+plot(bank$month, col = 'maroon', main = 'Last Time Contacted')
+plot(bank$poutcome, col = 'violet', main = 'Previous Marketing Outcome')
+par(mfrow = c(2,1))
+plot(bank$sub_term_dep, col = 'darkgreen', main = 'Subscription Term Deposit' )
+plot(bank$job, col = 'red', main = 'Job')
+par(mfrow = c(1,1))
+
+#Hiistogram and qqplots of numerical variables.
+par(mfrow=c(1,2))
+#Age
+hist(bank$age, main = 'Histogran of Age', col = 'red')
+qqPlot(bank$age, main = 'Q-Q Plot of Age', col = 'red')
+
+#Balance
+hist(bank$balance, main = 'Histogran of Balance', col = 'green')
+qqPlot(bank$balance, main = 'Q-Q Plot of Balance', col = 'green')
+
+#Day
+hist(bank$day, main = 'Histogran of Day', col = 'blue')
+qqPlot(bank$day, main = 'Q-Q Plot of Day', col = 'blue')
+
+#Duration
+hist(bank$duration, main = 'Histogran of Duration', col = 'purple')
+qqPlot(bank$duration, main = 'Q-Q Plot of Duration', col = 'purple')
+
+#Campaign
+hist(bank$campaign, main = 'Histogran of Campaign', col = 'orange')
+qqPlot(bank$campaign, main = 'Q-Q Plot of Campaign', col = 'orange')
+
+#Pdays
+hist(bank$pdays, main = 'Histogran of Pdays', col = 'turquoise')
+qqPlot(bank$pdays, main = 'Q-Q Plot of Pdays', col = 'turquoise')
+
+#Previous
+hist(bank$previous, main = 'Histogran of Previous', col = 'maroon')
+qqPlot(bank$previous, main = 'Q-Q Plot of Previous', col = 'maroon')
+
+dev.new()
+pairs.panels(bank)
+```
+From the EDA, the response variable is an ungrouped binary response variable with outcomes of 'no'; 88.30% of the observations, and 'yes'; 11.70% of the observations, for subscription term deposits. Therefore, we will use a binomial generalized linear model (GLM). Other observations show that this direct marketing campaign to obtain customer term deposit subscriptions has not be successful. Other variables such as 'loan' and 'house' could be further capitalized on to bring further success to the bank as there are vast amount of more customers who have personal and house loans compared to not.
+
+
+Step 2: Model- Binary GLM with different link functions.
+```{r}
+#Logit-link function.
+m1 = glm(sub_term_dep ~ ., data = bank, family = 'binomial')
+summary(m1) #AIC: 21648***
+
+#Probit-link function
+m2 = glm(sub_term_dep ~ ., data = bank, family = binomial('probit'))
+summary(m2) #AIC: 21610****
+
+#Cauchit-link function
+m3 = glm(sub_term_dep ~ ., data = bank, family = binomial('cauchit'))
+summary(m3) #AIC: 23180**
+
+#cloglog-link function
+m4 = glm(sub_term_dep ~ ., data = bank, family = binomial('cloglog'))
+summary(m4) #AIC: 23634*
+```
+After conducting several logistic regression models with different link functions. It was found that 'probit' was the best model with an AIC of 21610. Closely following the 'probit' link function was the logistic regression with 'logit' link with an AIC of 21648. The other models AIC scores were significantly greater than the ones mentioned above. In general, for best prediction we would use 'probit', but because the AIC values are so close we would choose 'logit' over 'probit' because we are able to have a model that we can actually describe to other people; if we increased an x value of a predictor variable we can explain the quantification of the effect of its beta value to the response variable along the implementation of the odds and log odds in the discussion, but with probit link function it becomes very difficult to interpret the meaning of the beta value and therefor describe.  Therefore, it is sometimes worth the trade-off slightly higher AIC score to present a model that we can describe. Therefore, we proceed with the logistic regression with the 'logit' link function for the remained of this study.
+
+
+Step 3: Significant variable selection using logistic regression with 'logit' link.
+```{r}
+#age beta value was found to be not significantly different to 0 (p-value > 0.05; 0.959233), therefore not having an influence on the response variable. Therefore, it is not needed in the model and can be taken out.
+m1a = glm(sub_term_dep ~ job + marital + education + balance + housing + loan + contact + day + month + duration + campaign + pdays + previous + poutcome, data = bank, family = 'binomial')
+summary(m1a) #Model improves from AIC: 21648 to 21644
+
+#pdays beta value was found to be not significantly different to 0 (p-value > 0.05; 0.736541), therefore not having an influence on the response variable. Therefore, it is not needed in the model and can be taken out.
+m1b = glm(sub_term_dep ~ job + marital + education + balance + housing + loan + contact + day + month + duration + campaign + previous + poutcome, data = bank, family = 'binomial')
+summary(m1b) #Model improves from AIC: 21644 to 21642
+
+#previous beta value was found to be not significantly different to 0 (p-value > 0.05; 0.117030), therefore not having an influence on the response variable. Therefore, it is not needed in the model and can be taken out.
+m1c = glm(sub_term_dep ~ job + marital + education + balance + housing + loan + contact + day + month + duration + campaign + poutcome, data = bank, family = 'binomial')
+summary(m1c) #Model does not improves from AIC: 21642 to 21643
+```
+Due to the AIC value being only one point different (increasing by 1 when we take out previous), for the sake of a simpler model we will continue with the previous variable taken out and use the likelihood test ratio to see if this simple model is preferred over the complex model. Therefore, job, marital, education, balance, housing, loan, contact, day, month, duration, campaign, previous, poutcome were found to have a significant influence on the response variable and are used for the model. Overall age and pdays predictor variables have been removed. Observing the standard error of our model summary, if there are very large values present, and the maximum log-likelihood value is extremely small we can assume complete or quasi-separation. No complete or quasi-separation was found in the model. 
+
+
+Step 4: We want a parsimonious model where there is a good balance between variance and bias. Use likelihood test ratio. We compare the model and nested model using their log likelihood and compare models by deviance. We can also use model selection; backward elimination and both (forward selection and backward elimination) to choose the best model.
+```{r}
+#likelihood test ratio for complex model vs chosen model.
+(m1m1c_anova = anova(m1,m1c, test = "Chisq"))
+
+#The likelihood test ratio shows that there is no significant difference between the two models, deviance: -2.7767. Due the models’ residuals deviance value being the same (21,562) and the Deviance value of -2.7767 and p-value greater than 0.05 (0.5959), therefore the simpler model is preferred over the complex model. Therefore, we will continue with the simpler model.
+
+#Backward elimination method for model selection.
+m6 = step(m1, direction = 'backward')
+summary(m6) #sub_term_dep ~ job + marital + education + balance + housing + loan + contact + day + month + duration + campaign + previous + poutcome
+#AIC: 21642
+
+#Forward selection and backward elimination method for model selection.
+m7 = step(m1, direction = 'both')
+summary(m7) #sub_term_dep ~ job + marital + education + balance + housing + loan + contact + day + month + duration + campaign + previous + poutcome
+#AIC: 21642
+
+#observing the standard errors. there are no large values, therefore we can conclude that there is no complete or quasi separation.
+```
+
+Step 5: Interaction
+```{r}
+#day * month interaction
+m1d = glm(sub_term_dep ~ job + marital + education + balance + housing + loan + contact + (day*month) + duration + campaign + poutcome, data = bank, family = 'binomial')
+summary(m1d) #AIC: 20879
+
+
+#housing * loan
+m1e = glm(sub_term_dep ~ job + marital + education + balance + (housing * loan) + contact + day + month + duration + campaign + poutcome, data = bank, family = 'binomial')
+summary(m1e) #AIC: 21634
+
+#There is a better AIC score by having an interaction between day and month. We will now test this model to the original model and to the simpler model previously chosen to so see which model is better to use.
+
+#model comparison: original model with all predictors vs simpler model with interaction
+(m1m1d_anova = anova(m1,m1d, test = "Chisq")) #deviance is large (783.74) and the p-value is <0.05 (2.2e-16). Therefore the more complex model is is significantly better than the simpler model with the interaction.
+
+(m1bm1e_anova = anova(m1c,m1d, test = "Chisq")) #same results as above, simpler model with no interaction is significantly better than the simpler model with interaction.
+
+#The likelihood test ratio shows that for each test the complex model is preferred model over the simpler interactive model.. The deviance value for the first test is 783.74 and a p-value of 2.2e-16,. Which is less than 0.05 and for the second test the deviance is  783.86 and a p-value of 2.2e-16. Therefore, these test conclude that the different interactive models are not favoured to use over the complex model. As we saw before the simple model with no interactions was preferred over the complex model, therefore we will continue to use the simple model without interactions.
+```
+From domain knowledge, the metatdata and testing interactions we can see an improvement in the AIC scores compared to a model without interactions. Interactions between day and month, and housing and loan were conducted, with the former having the best AIC score compared to all models previous made. After conducting the model comparison (likelihood ratio test) however, we can conclude that the simple model without the interaction is preferred over the simple model with the interactions.
+
+
+Step 6: Checking assumptions. Checking assumptions for a binomial generalized linear model we can only check for multicollinearity through variance inflation factors. Leverage and influential points are not that important because y is between 0 and 1. Impact of x on y is not that great. For logistic regression with ungrouped data there is no overdispersion for ungrouped data” because “overdispersion is not possible if ni=1. If yi only takes values 0 and 1, then it must be distributed as Bernoulli(π), and its variance must be πi (1− πi). 
+```{r}
+#Variance inflation factor (VIF) model m1c.
+var_infl= vif(m1c) #VIF focuses in turn on each predictor in the model, combining the main effect for that predictor with the main effects of the predictors with which the focal predictor interacts and the interactions; e.g., in the model with formula y ~ a*b + b*c
+
+var_infl #A general guideline is that a VIF larger than 5 or 10 is large, indicating that the model has problems estimating the coefficient. The VIF values are between 1.029 and 1.19 which is a low value that correlates to no multicollinearity, which satisfied the multicollinearity assumptions of.
+
+
+#Due to the nature of the logistic regression, we cannot check the link function, because when we plot working response to fitted values (resid(fit,m type = working)) the model would not be linear. Therefore we cannot conduct this test. 
+```
+
+Test predictive power of the model: Classification table and ROC.
+```{r}
+# We want to predict probability of subscription, therefore 'no' is the reference level
+#Create copy of subset data
+bank1 = bank
+#Split data
+set.seed(123)
+bank_sample = sample.split(bank1$sub_term_dep, SplitRatio = 0.80) #sample split.
+bank_train = subset(bank1, bank_sample == T) #Training data set.
+bank_test = subset(bank1, bank_sample == F) #Test data set.
+dim(bank_train)[1] #36169 Observations.
+dim(bank_test)[1] #9042 Observations.
+
+#Logistic regression
+m8 = glm(sub_term_dep ~ job + marital + education + balance + housing + loan + contact + day+ month + duration + campaign + poutcome, data = bank_train, family = 'binomial')
+summary(m8)#AIC: 17345
+
+#Predict probability
+(bank_probs = predict(m8, newdata = bank_test, type = 'response'))
+
+# Classification accuracy - test data
+bank_pred = as.factor(ifelse(bank_probs > 0.5, 'yes','no'))
+(bank_CM = table(bank_pred, bank_test$sub_term_dep))
+(bank_acc = sum(diag(bank_CM))/ sum(bank_CM)) #90.30% Accuracy
+
+#More Info
+confusionMatrix(bank_pred, bank_test$sub_term_dep)
+#From the confusion table we can see the accuracy of the model is 90.30%, where the sensitivity value (True Negative in this case: proportion of predicted 'no' to subscription classifications out of the number of samples that were did not subscribe) is 97.82%; 7810 true negatives (said predicted 'no' to subscription to term deposit that were actually 'no') and 174 false positive (predicted as saying 'yes' to subscribing to term deposit, but actually said 'no'), and the specificity (True Positive: proportion of predicted 'yes' subscriptions classifications out of the number of samples which were actually said 'yes' to subscribing) of 33.55%; 355 true positives (had said 'yes' to subscription term deposit and actually said 'yes') and 174 false negative (predicted to have said 'no' to subscription term deposit but actually said 'yes').
+
+# AUC — the area under the ROC curve accuracy; measure of accuracy where it graphs the true positive rate and the false positive rate.
+bank_pred_probs = predict(m8, newdata = bank_test[,-17], type = 'response')
+bank_pr = prediction(bank_pred_probs, bank_test$sub_term_dep)
+bank_pfr = performance(bank_pr, "tpr", "fpr")
+par(mfrow=c(1,1), mar=c(4,4,2,1))
+plot(bank_pfr, main="ROC Curve: 90.71% Accuracy")
+abline(a=0, b=1, col='red')
+(bank_auc_lgr = performance(bank_pr, "auc")@y.values) #A high-accuracy model indicates very few incorrect predictions. However, this doesn’t consider the overall cost of those incorrect predictions. The use of simple accuracy metrics problems can give an inflated sense of confidence in model predictions that is detrimental to some objectives. AUC is the go-to metric in such scenarios as it calibrates the trade-off between sensitivity and specificity at the best-chosen threshold. Further, 'accuracy' measures how well a single model is doing, whereas AUC compares two models as well as evaluates the same model’s performance across different thresholds. We can see between the two accuracies that the 'accuracy' model provides a 90.30% and AUC provides a 90.71% accuracy. With such a minuscule percent difference, we can confidently conclude that the logistic classification model has a very high predictive accuracy.
+```
+
+For loof for predictive power
+```{r}
+#Confusin Matrix
+for (i in 1:10) {
+  #Sample split
+  bank_sample1 = sample.split(bank1$sub_term_dep, SplitRatio = 0.80) #sample split.
+  bank_train1 = subset(bank1, bank_sample1 == T) #Training data set.
+  bank_test1 = subset(bank1, bank_sample1 == F) #Test data set.
+  
+  #Model
+  m9 = glm(sub_term_dep ~ job + marital + education + balance + housing + loan + contact + day + month + duration + campaign + poutcome, data = bank_train1, family = 'binomial')
+  
+  #Predict probability
+  (bank_probs1 = predict(m9, newdata = bank_test1, type = 'response'))
+  
+  #Classification accuracy - test data
+  bank_pred1 = ifelse(bank_probs1 > 0.5, 1,0)
+  (bank_CM1 = table(bank_pred1, bank_test1$sub_term_dep))
+  (bank_acc[i] = sum(diag(bank_CM1))/ sum(bank_CM1))
+}
+(bank_acc)
+(HF_lgr_forloop_mean = mean(bank_acc)) #0.901294
+(HF_lgr_forloop_variance = var(bank_acc)) #1.816341e-06
+```
+We can run the ‘forloop’ (10 iterations) of the accuracy test without the set seed to determine if we can be confident in the accuracy test of the model. Here we run the test 10 times and for each test the accuracy is saved. We can then calculate the mean accuracy for all 10 test and compare it to initial test with the set seed to see if they are relativity similar or not. We also check the deviance of the 10 test to see if there is a large spread of accuracy results. From the ‘forloop’ we can see that the mean accuracy is close to the accuracy when using the set seed and the variance is very low. Therefore, we can be confident in the accuracy of the classification table.
